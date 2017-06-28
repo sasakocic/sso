@@ -1,0 +1,36 @@
+{
+  "name": "sasakocic/sso",
+  "description": "Login Integrations like Facebook, Nasza Klasa, Vkontakte",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Sasa Kocic",
+      "email": "sasa.kocic@gmail.com"
+    }
+  ],
+  "require": {
+      "php": ">=7.0",
+      "bocharsky-bw/vkontakte-php-sdk": "^2.0"
+
+  },
+  "require-dev": {
+      "phpunit/phpunit": "6.*"
+  },
+  "autoload": {
+    "psr-4": {
+      "Integration\\": "src/Sso/",
+      "Tests\\": "tests/Tests/"
+    }
+  },
+  "scripts": {
+    "test": [
+      "phpunit --no-coverage"
+    ],
+    "phpcs": [
+      "phpcs --report=code --standard=PSR2 --extensions=php --ignore=autoload.php ./src"
+    ],
+    "phpcbf": [
+      "phpcbf --encoding=utf-8 --standard=PSR2 src/* tests/*"
+    ]
+  }
+}

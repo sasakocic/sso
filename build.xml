@@ -1,0 +1,292 @@
+<project name="sso" default="full-build">
+    <!--  By default, we assume all tools to be on the $PATH  -->
+    <property name="pdepend" value="${basedir}/build/tools/pdepend.phar"/>
+    <property name="pdepend-process" value="${basedir}/build/tools/pdepend-process.phar"/>
+    <property name="phpcpd" value="${basedir}/build/tools/phpcpd.phar"/>
+    <property name="phpcs" value="${basedir}/build/tools/phpcs.phar"/>
+    <property name="phpcb" value="${basedir}/build/tools/phpcb.phar"/>
+    <property name="phpdox" value="${basedir}/build/tools/phpdox.phar"/>
+    <property name="phploc" value="${basedir}/build/tools/phploc.phar"/>
+    <property name="phpmd" value="${basedir}/build/tools/phpmd.phar"/>
+    <property name="phpunit" value="${basedir}/build/tools/phpunit.phar"/>
+    <property name="ftp.server" value="FTP_SERVER"/>
+    <property name="ftp.user" value="FTP_USER"/>
+    <property name="ftp.password" value="FTP_PASSWORD"/>
+    <property name="ftp.remotedir" value="yahuah/build/${ant.project.name}/"/>
+    <property name="deploy.remotedir" value="yahuah/${ant.project.name}/"/>
+
+    <target name="full-build" depends="prepare,static-analysis,phpunit,phpcb,phpdox,-check-failure,ftp"
+            description="Performs static analysis, runs the tests, and generates project documentation"/>
+    <target name="full-build-parallel"
+            depends="prepare,static-analysis-parallel,phpunit,phpcb,phpdox,-check-failure,ftp"
+            description="Performs static analysis (executing the tools in parallel), runs the tests, and generates project documentation"/>
+    <target name="quick-build" depends="prepare,lint,phpunit-no-coverage"
+            description="Performs a lint check and runs the tests (without generating code coverage reports)"/>
+    <target name="static-analysis" depends="lint,phploc-ci,pdepend,phpmd-ci,phpcs-ci,phpcpd-ci"
+            description="Performs static analysis"/>
+    <!--
+     Adjust the threadCount attribute's value to the number of CPUs
+    -->
+    <target name="static-analysis-parallel" description="Performs static analysis (executing the tools in parallel)">
+        <parallel threadCount="2">
+            <sequential>
+                <antcall target="pdepend"/>
+                <antcall target="pdepend-process"/>
+                <antcall target="phpmd-ci"/>
+            </sequential>
+            <antcall target="lint"/>
+            <antcall target="phpcpd-ci"/>
+            <antcall target="phpcs-ci"/>
+            <antcall target="phploc-ci"/>
+        </parallel>
+    </target>
+    <target name="clean" unless="clean.done" description="Cleanup build artifacts">
+        <delete dir="${basedir}/build/api"/>
+        <delete dir="${basedir}/build/coverage"/>
+        <delete dir="${basedir}/build/logs"/>
+        <delete dir="${basedir}/build/pdepend"/>
+        <delete dir="${basedir}/build/docs/pdepend-process"/>
+        <delete dir="${basedir}/build/docs/phpcb"/>
+        <delete dir="${basedir}/build/phpdox"/>
+        <delete dir="${basedir}/build/tools"/>
+        <property name="clean.done" value="true"/>
+    </target>
+    <target name="prepare" unless="prepare.done" depends="clean" description="Prepare for build">
+        <mkdir dir="${basedir}/build/api"/>
+        <mkdir dir="${basedir}/build/coverage"/>
+        <mkdir dir="${basedir}/build/logs"/>
+        <mkdir dir="${basedir}/build/pdepend"/>
+        <mkdir dir="${basedir}/build/docs/pdepend-process"/>
+        <mkdir dir="${basedir}/build/docs/phpcb"/>
+        <mkdir dir="${basedir}/build/phpdox"/>
+        <mkdir dir="${basedir}/build/tools"/>
+        <property name="prepare.done" value="true"/>
+    </target>
+    <target name="lint" unless="lint.done" description="Perform syntax check of sourcecode files">
+        <apply executable="php" taskname="lint">
+            <arg value="-l"/>
+            <fileset dir="${basedir}/src">
+                <include name="**/*.php"/>
+                <modified/>
+            </fileset>
+            <fileset dir="${basedir}/tests">
+                <include name="**/*.php"/>
+                <modified/>
+            </fileset>
+        </apply>
+        <property name="lint.done" value="true"/>
+    </target>
+    <target name="tools" depends="prepare" description="PHAR tools">
+        <get src="https://yahuah.net/archive/phpcb-1.1.2-2-g634606c.phar" dest="${basedir}/build/tools/phpcb.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/pdepend-process.phar" dest="${basedir}/build/tools/pdepend-process.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/phpdox-0.9.0.phar" dest="${basedir}/build/tools/phpdox.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/phpcpd-3.0.0.phar" dest="${basedir}/build/tools/phpcpd.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/phpmd.phar" dest="${basedir}/build/tools/phpmd.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/phpcs.phar" dest="${basedir}/build/tools/phpcs.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/pdepend.phar" dest="${basedir}/build/tools/pdepend.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/phploc-3.0.1.phar" dest="${basedir}/build/tools/phploc.phar"
+             skipexisting="true"/>
+        <get src="https://yahuah.net/archive/phpunit-6.1.4.phar" dest="${basedir}/build/tools/phpunit.phar"
+             skipexisting="true"/>
+        <chmod file="${basedir}/build/tools/**" perm="ugo+rx" type="both"/>
+    </target>
+    <target name="phploc" unless="phploc.done" depends="tools"
+            description="Measure project size using PHPLOC and print human readable output. Intended for usage on the command line.">
+        <exec executable="${phploc}" taskname="phploc">
+            <arg value="--count-tests"/>
+            <arg path="${basedir}/src"/>
+            <arg path="${basedir}/tests"/>
+        </exec>
+        <property name="phploc.done" value="true"/>
+    </target>
+    <target name="phploc-ci" unless="phploc.done" depends="tools"
+            description="Measure project size using PHPLOC and log result in CSV and XML format. Intended for usage within a continuous integration environment.">
+        <exec executable="${phploc}" taskname="phploc">
+            <arg value="--count-tests"/>
+            <arg value="--log-csv"/>
+            <arg path="${basedir}/build/logs/phploc.csv"/>
+            <arg value="--log-xml"/>
+            <arg path="${basedir}/build/logs/phploc.xml"/>
+            <arg path="${basedir}/src"/>
+            <arg path="${basedir}/tests"/>
+        </exec>
+        <property name="phploc.done" value="true"/>
+    </target>
+    <target name="pdepend" unless="pdepend.done" depends="tools"
+            description="Calculate software metrics using PHP_Depend and log result in XML format. Intended for usage within a continuous integration environment.">
+        <exec executable="${pdepend}" taskname="pdepend">
+            <arg value="--jdepend-xml=${basedir}/build/logs/jdepend.xml"/>
+            <arg value="--summary-xml=${basedir}/build/logs/summary.xml"/>
+            <arg value="--jdepend-chart=${basedir}/build/pdepend/dependencies.svg"/>
+            <arg value="--overview-pyramid=${basedir}/build/pdepend/overview-pyramid.svg"/>
+            <arg path="${basedir}/src"/>
+        </exec>
+        <exec executable="${pdepend-process}" taskname="pdepend-process">
+            <arg value="--dashboard-html"/>
+            <arg value="${basedir}/build/docs/pdepend-process"/>
+            <arg value="${basedir}/build/logs/summary.xml"/>
+        </exec>
+        <property name="pdepend.done" value="true"/>
+    </target>
+    <target name="phpmd" unless="phpmd.done" depends="tools"
+            description="Perform project mess detection using PHPMD and print human readable output. Intended for usage on the command line before committing.">
+        <exec executable="${phpmd}" taskname="phpmd">
+            <arg path="${basedir}/src"/>
+            <arg value="text"/>
+            <arg path="${basedir}/phpmd.xml"/>
+        </exec>
+        <property name="phpmd.done" value="true"/>
+    </target>
+    <target name="phpmd-ci" unless="phpmd.done" depends="tools"
+            description="Perform project mess detection using PHPMD and log result in XML format. Intended for usage within a continuous integration environment.">
+        <exec executable="${phpmd}" taskname="phpmd">
+            <arg path="${basedir}/src"/>
+            <arg value="xml"/>
+            <arg path="${basedir}/phpmd.xml"/>
+            <arg value="--reportfile"/>
+            <arg path="${basedir}/build/logs/pmd.xml"/>
+        </exec>
+        <property name="phpmd.done" value="true"/>
+    </target>
+    <target name="phpcs" unless="phpcs.done" depends="tools"
+            description="Find coding standard violations using PHP_CodeSniffer and print human readable output. Intended for usage on the command line before committing.">
+        <exec executable="${phpcs}" taskname="phpcs">
+            <arg value="--report=code"/>
+            <arg value="--standard=PSR2"/>
+            <arg value="--extensions=php"/>
+            <arg value="--ignore=autoload.php"/>
+            <arg path="${basedir}/src"/>
+            <arg path="${basedir}/tests"/>
+        </exec>
+        <property name="phpcs.done" value="true"/>
+    </target>
+    <target name="phpcb" depends="tools" description="PHP Code Browser">
+        <exec executable="${phpcb}" taskname="phpcb">
+            <arg value="--log=${basedir}/build/logs"/>
+            <arg value="--source=${basedir}/src"/>
+            <arg value="--output=${basedir}/build/docs/phpcb"/>
+        </exec>
+    </target>
+    <target name="phpcs-ci" unless="phpcs.done" depends="tools"
+            description="Find coding standard violations using PHP_CodeSniffer and log result in XML format. Intended for usage within a continuous integration environment.">
+        <exec executable="${phpcs}" taskname="phpcs">
+            <arg value="--report=checkstyle"/>
+            <arg value="--report-file=${basedir}/build/logs/checkstyle.xml"/>
+            <arg value="--standard=PSR2"/>
+            <arg value="--extensions=php"/>
+            <arg value="--ignore=autoload.php"/>
+            <arg path="${basedir}/src"/>
+            <arg path="${basedir}/tests"/>
+        </exec>
+        <property name="phpcs.done" value="true"/>
+    </target>
+    <target name="phpcpd" unless="phpcpd.done" depends="tools"
+            description="Find duplicate code using PHPCPD and print human readable output. Intended for usage on the command line before committing.">
+        <exec executable="${phpcpd}" taskname="phpcpd">
+            <arg path="${basedir}/src"/>
+        </exec>
+        <property name="phpcpd.done" value="true"/>
+    </target>
+    <target name="phpcpd-ci" unless="phpcpd.done" depends="tools"
+            description="Find duplicate code using PHPCPD and log result in XML format. Intended for usage within a continuous integration environment.">
+        <exec executable="${phpcpd}" taskname="phpcpd">
+            <arg value="--log-pmd"/>
+            <arg path="${basedir}/build/logs/pmd-cpd.xml"/>
+            <arg path="${basedir}/src"/>
+        </exec>
+        <property name="phpcpd.done" value="true"/>
+    </target>
+    <target name="phpunit" unless="phpunit.done" depends="tools" description="Run unit tests with PHPUnit">
+        <exec executable="${phpunit}" resultproperty="result.phpunit" taskname="phpunit">
+            <arg value="--configuration"/>
+            <arg path="${basedir}/phpunit.xml"/>
+            <arg value="--coverage-text"/>
+            <arg value="--colors=never"/>
+            <arg value="--coverage-clover"/>
+            <arg path="${basedir}/build/logs/clover.xml"/>
+            <arg value="--coverage-html"/>
+            <arg path="${basedir}/build/docs/coverage"/>
+            <arg value="--coverage-xml"/>
+            <arg path="${basedir}/build/logs/coverage"/>
+        </exec>
+        <property name="phpunit.done" value="true"/>
+    </target>
+    <target name="phpunit-no-coverage" unless="phpunit.done" depends="tools"
+            description="Run unit tests with PHPUnit (without generating code coverage reports)">
+        <exec executable="${phpunit}" failonerror="true" taskname="phpunit">
+            <arg value="--configuration"/>
+            <arg path="${basedir}/phpunit.xml"/>
+            <arg value="--no-coverage"/>
+            <arg value="--testdox-format"/>
+            <arg value="--testdox-xml"/>
+            <arg path="${basedir}/build/logs/index.xml"/>
+        </exec>
+        <property name="phpunit.done" value="true"/>
+    </target>
+    <target name="phpdox" unless="phpdox.done" depends="phploc-ci,phpcs-ci,phpmd-ci"
+            description="Generate project documentation using phpDox">
+        <exec executable="${phpdox}" dir="${basedir}" taskname="phpdox">
+            <arg value="-f"/>
+            <arg path="${basedir}/phpdox.xml"/>
+        </exec>
+        <property name="phpdox.done" value="true"/>
+    </target>
+    <target name="-check-failure">
+        <fail message="PHPUnit did not finish successfully">
+            <condition>
+                <not>
+                    <equals arg1="${result.phpunit}" arg2="0"/>
+                </not>
+            </condition>
+        </fail>
+    </target>
+    <target name="ftp" description="upload build folder to server">
+        <ftp
+                server="${ftp.server}" remotedir="yahuah/build"
+                userid="${ftp.user}" password="${ftp.password}"
+                action="delete">
+            <fileset>
+                <include name="${ant.project.name}/**"/>
+            </fileset>
+        </ftp>
+        <ftp
+                server="${ftp.server}" remotedir="${ftp.remotedir}"
+                userid="${ftp.user}" password="${ftp.password}"
+                action="mkdir">
+        </ftp>
+        <ftp
+                server="${ftp.server}" remotedir="${ftp.remotedir}"
+                userid="${ftp.user}" password="${ftp.password}"
+                action="send" depends="yes">
+            <fileset dir="${basedir}/build"/>
+        </ftp>
+    </target>
+    <target name="deploy" description="deploy to server">
+        <ftp
+                server="${ftp.server}" remotedir="yahuah"
+                userid="${ftp.user}" password="${ftp.password}"
+                action="delete" verbose="yes">
+            <fileset>
+                <include name="${ant.project.name}/**"/>
+            </fileset>
+        </ftp>
+        <ftp
+                server="${ftp.server}" remotedir="${deploy.remotedir}"
+                userid="${ftp.user}" password="${ftp.password}"
+                action="mkdir" verbose="yes">
+        </ftp>
+        <ftp
+                server="${ftp.server}" remotedir="${deploy.remotedir}"
+                userid="${ftp.user}" password="${ftp.password}"
+                action="send" verbose="yes" depends="yes">
+            <fileset dir="${basedir}"/>
+        </ftp>
+    </target>
+</project>
